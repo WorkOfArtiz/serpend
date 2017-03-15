@@ -6,7 +6,6 @@ over it.
 
 We would prefer to make this fairly fast, although this is not our highest priority
 """
-import datetime
 import mmap
 import struct
 import lzma
@@ -26,7 +25,7 @@ class Syslog:
     # with-Semantics
     def __enter__(self):
         self.handle = open(self.path, 'rb')
-        self.area   = mmap.mmap(self.handle.fileno(), 0, mmap.MAP_PRIVATE, mmap.PROT_READ)
+        self.area   = mmap.mmap(self.handle.fileno(), 0, access=mmap.ACCESS_READ)
 
         # File should start with LPKSHHRH
         if self.area[:8] != b'LPKSHHRH':
@@ -98,13 +97,17 @@ class Syslog:
         entry['SEQNUM']    = seqnum
 
         # Times are expressed in usec
-        entry['REALTIME']  = datetime.datetime.fromtimestamp(realtime / 1000000)
-        entry['MONOTONIC'] = datetime.datetime.fromtimestamp(monotonic / 1000000)
+        entry['__REALTIME_TIMESTAMP']  = '%.6f' % (realtime  / 1000000)
+        entry['__MONOTONIC_TIMESTAMP'] = '%.6f' % (monotonic / 1000000)
 
         for entry_item_offset in range(offset + 64, offset + size, 16):
             data_offset, object_hash = struct.unpack_from("<2Q", self.area, entry_item_offset)
             data_key, data_value = self._data_from_offset(data_offset)
-            entry[data_key] = data_value
+
+            try:
+                entry[data_key] = int(data_value)
+            except ValueError:
+                entry[data_key] = data_value
 
         return entry
 

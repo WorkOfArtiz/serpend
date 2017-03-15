@@ -1,3 +1,8 @@
+#!/usr/bin/env python3
+# -*- coding utf-8 -*-
+"""
+A module for reading and analysing systemd logs
+"""
 from serpend import Syslog
 
 if __name__ == '__main__':
@@ -10,5 +15,12 @@ if __name__ == '__main__':
 
     with Syslog(args.logfile) as logfile:
         for entry in logfile.entries():
-            print("[%s] %s" % (entry['REALTIME'].strftime("%s.%f"), entry['MESSAGE']))
+
+            # print(*entry.items(), sep="\n")
+            try:
+                print("[%s] [%5d] %s" % (entry['__REALTIME_TIMESTAMP'], entry["_PID"], entry['MESSAGE']))
+            except KeyError:
+                print("[%s] [xxxxx] %s" % (entry['__REALTIME_TIMESTAMP'], entry['MESSAGE']))
+
+            # break
             # print(entry.get('MESSAGE', 'No message in this entry'))
