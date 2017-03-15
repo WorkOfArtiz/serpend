@@ -1,0 +1,12 @@
+# A snort-inspired format
+#
+# Comments can end a line
+#
+# alert <PID> <UID> <GID>                   <MSG> '(' [ selector ';' ]+ ')'
+alert       0     *     *  "[$REALTIME] $MESSAGE"  (                     )
+
+# Whitespace doesn't matter :D
+alert * * *
+                "[! $REALTIME] IMPORTANT! : $MESSAGE"
+
+        (PRIORITY:6)
