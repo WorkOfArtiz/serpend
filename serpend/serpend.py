@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding utf-8 -*-
+"""
+A module that reads in systemd's log format and defines a very basic API
+over it.
+
+We would prefer to make this fairly fast, although this is not our highest priority
+"""
 import datetime
 import mmap
 import struct
@@ -17,42 +23,19 @@ class Syslog:
         self.path   = path
         self.area = self.handle = None
 
-    def _entry_offsets(self, entry_array_offset, recursive=True):
-        """
-        meant as a private method, parses an entry_array offset to a number of
-        entry offsets. Note that this is done recursively by default, as the
-        EntryArray object is internally linked to the offset of the next EntryArray.
+    # with-Semantics
+    def __enter__(self):
+        self.handle = open(self.path, 'rb')
+        self.area   = mmap.mmap(self.handle.fileno(), 0, mmap.MAP_PRIVATE, mmap.PROT_READ)
 
-        :param entry_array_offset an offset to an EntryArray Object
-        :param recursive whether the linked structure of EntryArray Objects is followed
+        # File should start with LPKSHHRH
+        if self.area[:8] != b'LPKSHHRH':
+            raise SyslogParseException("File signature did not match")
+        return self
 
-        offset  0. uint8_t type;
-        offset  1. uint8_t flags;
-        offset  2. uint8_t reserved[6];
-        offset  8. le64_t size;
-        offset 16. le64_t next_entry_array_offset;
-        offset 24. le64_t items[];
-        """
-
-        # if entry_array_offset == 0, we're at the end
-        while entry_array_offset != 0:
-            # get the size attribute (little endian, 64bit) at 8 internal offset
-            size, = struct.unpack_from("<Q", self.area, entry_array_offset + 8)
-            # print("Entries in this entry array: %d" % ((size - 24) // 8))
-
-            # There are size (- header size (24 bytes)) / 8 entries
-            for i in range((size - 24) // 8):
-                entry_offset, = struct.unpack_from("<Q", self.area, entry_array_offset + 24 + i * 8)
-
-                if entry_offset != 0:
-                    yield entry_offset
-
-            if recursive:
-                entry_array_offset, = struct.unpack_from("<Q", self.area, entry_array_offset + 16)
-            else:
-                entry_array_offset = 0
-        return
-        yield
+    def __exit__(self, type, value, traceback):
+        self.handle.close()
+        return None
 
     def _data_from_offset(self, offset):
         """
@@ -125,8 +108,59 @@ class Syslog:
 
         return entry
 
+    def _entry_offsets(self, entry_array_offset, recursive=True):
+        """
+        meant as a private method, parses an entry_array offset to a number of
+        entry offsets. Note that this is done recursively by default, as the
+        EntryArray object is internally linked to the offset of the next EntryArray.
+
+        :param entry_array_offset an offset to an EntryArray Object
+        :param recursive whether the linked structure of EntryArray Objects is followed
+
+        offset  0. uint8_t type;
+        offset  1. uint8_t flags;
+        offset  2. uint8_t reserved[6];
+        offset  8. le64_t size;
+        offset 16. le64_t next_entry_array_offset;
+        offset 24. le64_t items[];
+        """
+
+        # if entry_array_offset == 0, we're at the end
+        while entry_array_offset != 0:
+            # get the size attribute (little endian, 64bit) at 8 internal offset
+            size, = struct.unpack_from("<Q", self.area, entry_array_offset + 8)
+            # print("Entries in this entry array: %d" % ((size - 24) // 8))
+
+            # There are size (- header size (24 bytes)) / 8 entries
+            for i in range((size - 24) // 8):
+                entry_offset, = struct.unpack_from("<Q", self.area, entry_array_offset + 24 + i * 8)
+
+                if entry_offset != 0:
+                    yield entry_offset
+
+            if recursive:
+                entry_array_offset, = struct.unpack_from("<Q", self.area, entry_array_offset + 16)
+            else:
+                entry_array_offset = 0
+        return
+        yield
+
     def entries(self):
         """
+        Returns a generator filled with entries.
+
+        Entries are sure to have
+        - A datetime 'REALTIME'
+        - A datetime 'MONOTONIC'
+        - A sequence number
+
+        Entries probably all have a message 'MESSAGE'
+        """
+
+        """
+        Parsing:
+        Internally, we need to parse the file header. in __enter__ we already look at the signature
+
         File header
 
         offset   0  uint8_t signature[8]; /* "LPKSHHRH" */
@@ -160,16 +194,3 @@ class Syslog:
         for entry_offset in self._entry_offsets(initial_entry_array_offset):
             yield self._entry_from_offset(entry_offset)
 
-    # with-Semantics
-    def __enter__(self):
-        self.handle = open(self.path, 'rb')
-        self.area   = mmap.mmap(self.handle.fileno(), 0, mmap.MAP_PRIVATE, mmap.PROT_READ)
-
-        # File should start with LPKSHHRH
-        if self.area[:8] != b'LPKSHHRH':
-            raise SyslogParseException("File signature did not match")
-        return self
-
-    def __exit__(self, type, value, traceback):
-        self.handle.close()
-        return None
