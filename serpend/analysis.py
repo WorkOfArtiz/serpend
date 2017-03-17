@@ -51,27 +51,31 @@ STANDARD_STRING_FORMAT = "[$__REALTIME_TIMESTAMP] $MESSAGE"
 GRAMMAR
 """
 # types of patterns, annotated
-PAT_NR, PAT_NE, PAT_LT, PAT_ST, PAT_LE, PAT_SE, PAT_STR, PAT_STAR, PAT_AVAIL, PAT_NEG, PAT_REG = ['PAT_%s' % s for s in 'NR NR_NE NR_LT NR_ST NR_LE NR_SE STR STAR AVAIL NEG REG'.split()]
+PAT_NR, PAT_NE, PAT_LT, PAT_ST, PAT_LE, PAT_SE, PAT_STR, PAT_STAR, PAT_AVAIL, PAT_NEG, PAT_REG = ['PAT_%s' % s for s in
+                                                                                                  'NR NR_NE NR_LT NR_ST NR_LE NR_SE STR STAR AVAIL NEG REG'.split()]
 
 # Basic types
 hexadecimal = (pp.Suppress('0x') + pp.Word(pp.hexnums)).setParseAction(lambda x: int(x[0], 16))
-octogonal   = ('0' + pp.Optional(pp.Word("01234567"))).setParseAction(lambda x: int("".join(x), 8))
-decimal     = pp.Word(pp.nums).setParseAction(lambda x: int(x[0], 10))
-string      = pp.QuotedString('"', escChar='\\', unquoteResults=True) | pp.QuotedString("'", escChar='\\', unquoteResults=True)
+octogonal = ('0' + pp.Optional(pp.Word("01234567"))).setParseAction(lambda x: int("".join(x), 8))
+decimal = pp.Word(pp.nums).setParseAction(lambda x: int(x[0], 10))
+string = pp.QuotedString('"', escChar='\\', unquoteResults=True) | pp.QuotedString("'", escChar='\\',
+                                                                                   unquoteResults=True)
 
 # Pattern types
-pat_number  = (hexadecimal | octogonal | decimal).setParseAction(lambda x: (PAT_NR, x[0]))
-pat_ne      = (pp.Suppress('!=') + (hexadecimal | octogonal | decimal)).setParseAction(lambda x: (PAT_NE, x[0]))
-pat_lt      = (pp.Suppress('>') + (hexadecimal | octogonal | decimal)).setParseAction(lambda x: (PAT_LT, x[0]))
-pat_st      = (pp.Suppress('<') + (hexadecimal | octogonal | decimal)).setParseAction(lambda x: (PAT_ST, x[0]))
-pat_le      = (pp.Suppress('>=') + (hexadecimal | octogonal | decimal)).setParseAction(lambda x: (PAT_LE, x[0]))
-pat_se      = (pp.Suppress('<=') + (hexadecimal | octogonal | decimal)).setParseAction(lambda x: (PAT_SE, x[0]))
-pat_string  = string.copy().setParseAction(lambda x: (PAT_STR, x[0]))
-pat_star    = pp.Literal('*').setParseAction(lambda x:(PAT_STAR, '*'))
-pat_neg     = pp.Literal('!').setParseAction(lambda x:(PAT_NEG, '!'))
-pat_avail   = pp.Literal('?').setParseAction(lambda x:(PAT_AVAIL, '?'))
-pat_regex   = pp.QuotedString('/', escChar='\\', unquoteResults=True).setParseAction(lambda x:(PAT_REG, x[0]))
-pat         = (pat_number | pat_ne | pat_le | pat_se | pat_lt | pat_st | pat_string | pat_star | pat_avail | pat_neg | pat_regex).setParseAction(lambda x:x[0])
+pat_number = (hexadecimal | octogonal | decimal).setParseAction(lambda x: (PAT_NR, x[0]))
+pat_ne = (pp.Suppress('!=') + (hexadecimal | octogonal | decimal)).setParseAction(lambda x: (PAT_NE, x[0]))
+pat_lt = (pp.Suppress('>') + (hexadecimal | octogonal | decimal)).setParseAction(lambda x: (PAT_LT, x[0]))
+pat_st = (pp.Suppress('<') + (hexadecimal | octogonal | decimal)).setParseAction(lambda x: (PAT_ST, x[0]))
+pat_le = (pp.Suppress('>=') + (hexadecimal | octogonal | decimal)).setParseAction(lambda x: (PAT_LE, x[0]))
+pat_se = (pp.Suppress('<=') + (hexadecimal | octogonal | decimal)).setParseAction(lambda x: (PAT_SE, x[0]))
+pat_string = string.copy().setParseAction(lambda x: (PAT_STR, x[0]))
+pat_star = pp.Literal('*').setParseAction(lambda x: (PAT_STAR, '*'))
+pat_neg = pp.Literal('!').setParseAction(lambda x: (PAT_NEG, '!'))
+pat_avail = pp.Literal('?').setParseAction(lambda x: (PAT_AVAIL, '?'))
+pat_regex = pp.QuotedString('/', escChar='\\', unquoteResults=True).setParseAction(lambda x: (PAT_REG, x[0]))
+pat = (
+pat_number | pat_ne | pat_le | pat_se | pat_lt | pat_st | pat_string | pat_star | pat_avail | pat_neg | pat_regex).setParseAction(
+    lambda x: x[0])
 
 pid = pat.copy()
 pid.setParseAction(lambda token: ('_PID', token[0]))
@@ -83,7 +87,7 @@ gid = pat.copy()
 gid.setParseAction(lambda token: ('_GID', token[0]))
 
 interpolated_str_fmt = pp.Optional(string, default=STANDARD_STRING_FORMAT)
-interpolated_str_fmt.setParseAction(lambda fmt:fmt[0])
+interpolated_str_fmt.setParseAction(lambda fmt: fmt[0])
 
 selector = pp.Word(pp.alphas + '_') + pp.Suppress(":") + pat
 selector.setParseAction(lambda sel: (sel[0], sel[1]))
@@ -93,23 +97,24 @@ selector.setParseAction(lambda sel: (sel[0], sel[1]))
 selector_list = (pp.delimitedList(selector, ';') + pp.Optional(';') | pp.Empty())
 
 # This is the grand total, the alert rule
-alert = pp.Suppress('alert') + pid + uid + gid + interpolated_str_fmt + pp.Suppress('(') + selector_list + pp.Suppress(')')
+alert = pp.Suppress('alert') + pid + uid + gid + interpolated_str_fmt + pp.Suppress('(') + selector_list + pp.Suppress(
+    ')')
 
 # So far we only have alert rules
-rule = alert.setParseAction(lambda x:[x])
+rule = alert.setParseAction(lambda x: [x])
 
 # A rulefile then consists of multiples of these
 # rulefile = pp.Forward()
 # rulefile << (rule + rulefile | pp.Empty())
 rulefile = pp.ZeroOrMore(rule)
-rulefile.setParseAction(lambda x:list(x))
+rulefile.setParseAction(lambda x: list(x))
+
 
 class SysRule:
     def __init__(self, rule):
         # if it's a string, we'll have to parse it ourselves, otherwise assume it's already parsed
         if isinstance(rule, str):
             rule = alert.parseString(rule, parseAll=True)
-
 
         # Our parsing function parses the rule into
         # pat, pat, pat, print_string, pat, pat, ...
@@ -121,20 +126,20 @@ class SysRule:
         filters = [(attr, (pat_type, pat_val)) for (attr, (pat_type, pat_val)) in filters if pat_type != PAT_STAR]
 
         # Make a copy of the representation, compiled is gonna look different
-        self.representation = 'ALERT "%s" %s' % (print_fmt, " ".join("%s(entry, %s, %s)" % (pat_type, attr, pat_val) for (attr, (pat_type, pat_val)) in filters))
+        self.representation = 'ALERT "%s" %s' % (
+        print_fmt, " ".join("%s(entry, %s, %s)" % (pat_type, attr, pat_val) for (attr, (pat_type, pat_val)) in filters))
+        self.user_fmt = print_fmt
 
         ##########################################
         # Compile time motherfuckers :D          #
         ##########################################
 
         # print format is compiled to python's string format
-        interp_val     = re.compile(r'\$([A-Za-z_][A-Za-z0-9_]*)')                      # to translate $VAR to {VAR!s}
-        self.user_fmt  = print_fmt
+        interp_val = re.compile(r'\$([A-Za-z_][A-Za-z0-9_]*)')  # to translate $VAR to {VAR!s}
         self.print_fmt = interp_val.sub(r'{\1!s}', print_fmt.replace("{", "{{").replace("}", "}}"))
 
         # Filters are compiled into lambdas
         self.filters = [SysRule._compile_filter(f) for f in filters]
-
 
     @staticmethod
     def _compile_filter(filter):
@@ -196,21 +201,25 @@ class SysRule:
             def _larger_than(entry):
                 val = try_int(entry.get(attribute, None), None)
                 return val != None and val > pat_val
+
             return _larger_than
         elif pat_type == PAT_ST:
             def _smaller_than(entry):
                 val = try_int(entry.get(attribute, None), None)
                 return val != None and val < pat_val
+
             return _smaller_than
         elif pat_type == PAT_LE:
             def _larger_than(entry):
                 val = try_int(entry.get(attribute, None), None)
                 return val != None and val >= pat_val
+
             return _larger_than
         elif pat_type == PAT_SE:
             def _smaller_than(entry):
                 val = try_int(entry.get(attribute, None), None)
                 return val != None and val <= pat_val
+
             return _smaller_than
         elif pat_type == PAT_REG:
             compiled = re.compile(pat_val)
@@ -248,11 +257,29 @@ class SysRule:
         return [SysRule(rule) for rule in rules]
 
     def run_entry(self, entry):
+        """
+        Runs a rule over an entry and prints the message iff the entry matches
+        :param entry: a dictionairy like Systemd EntryObject
+        :return: self
+        """
         if all(f(entry) for f in self.filters):
             try:
                 print(self.print_fmt.format(**entry))
             except KeyError as ke:
                 print("Needed to print %s, but variable %s was not present" % (self.usr_fmt, str(ke)), file=sys.stderr)
+
+        return self
+
+    def matches(self, entry):
+        """
+        For the sake of extensibility, you can use this function to do different things when the function matches.
+
+
+        :param entry: a dictionairy like Systemd EntryObject
+        :return: true or false depending on whether all patterns matched or not
+        """
+
+        return all(f(entry) for f in self.filters)
 
     def __repr__(self):
         return self.representation
@@ -280,14 +307,16 @@ if __name__ == '__main__':
     """.strip()
 
     test_entries = [
-        {'__REALTIME_TIMESTAMP': '123123', 'MESSAGE': 'In a galaxy far away', '_PID' : 0, 'A' : 'abc', 'B':'somestring'},
-        {'__REALTIME_TIMESTAMP': '123124', 'MESSAGE': 'Star wars you idiot',  '_PID': 0, 'A': 'abc', 'B': 'adifferentstring'},
-        {'__REALTIME_TIMESTAMP': '123125', 'MESSAGE': 'And now for something different', '_PID': '2', '_UID': '3', '_GID': '4'},
+        {'__REALTIME_TIMESTAMP': '123123', 'MESSAGE': 'In a galaxy far away', '_PID': 0, 'A': 'abc', 'B': 'somestring'},
+        {'__REALTIME_TIMESTAMP': '123124', 'MESSAGE': 'Star wars you idiot', '_PID': 0, 'A': 'abc',
+         'B': 'adifferentstring'},
+        {'__REALTIME_TIMESTAMP': '123125', 'MESSAGE': 'And now for something different', '_PID': '2', '_UID': '3',
+         '_GID': '4'},
     ]
 
     print("READING IN RULES FROM STRING ")
     sysrules = SysRule.rules_from_string(rules)
-    print("-"*80)
+    print("-" * 80)
     print("rules:")
     print(*sysrules, sep='\n')
     print("-" * 80)
@@ -305,7 +334,6 @@ if __name__ == '__main__':
     print(*sysrules, sep='\n')
     print("-" * 80)
     print("Messages #triggered")
-
 
     for sysrule in sysrules:
         for entry in test_entries:
