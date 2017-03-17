@@ -129,6 +129,7 @@ class SysRule:
 
         # print format is compiled to python's string format
         interp_val     = re.compile(r'\$([A-Za-z_][A-Za-z0-9_]*)')                      # to translate $VAR to {VAR!s}
+        self.user_fmt  = print_fmt
         self.print_fmt = interp_val.sub(r'{\1!s}', print_fmt.replace("{", "{{").replace("}", "}}"))
 
         # Filters are compiled into lambdas
@@ -151,12 +152,20 @@ class SysRule:
 
         Sorts of patterns
             type      possible patterns:
+            PAT_AVAIL ?            matches if the field is an attribute of the entry
             PAT_NEG   !            matches if field is not an attribute of the entry
             PAT_STAR  *            always matches, even if non-existent. (this is useful for the pid, gid and uid which are
                                       always in the alert construction)
             PAT_NR    <number>     matches if the field
                                      1) can be converted to an decimal
                                      2) matches number
+
+            PAT_NE    <number>     matches if the field is not equal / larger than / smaller than / larger equal to /
+            PAT_LT    <number>     smaller equal to a number
+            PAT_ST    <number>
+            PAT_LE    <number>
+            PAT_SE    <number>
+
             PAT_STR   <string>     matches if the field has the exact value of the quoted string. Note both ' and " accepted
                                         examples: "/usr/bin/env", 'If you\'re so "mentally challenged", please visit a doctor'
             PAT_REG   <regex>      matches if the field matches the regex. perl-like syntax
@@ -243,7 +252,7 @@ class SysRule:
             try:
                 print(self.print_fmt.format(**entry))
             except KeyError as ke:
-                print("Could not print log entry: %s not found in entry" % str(ke), file=sys.stderr)
+                print("Needed to print %s, but variable %s was not present" % (self.usr_fmt, str(ke)), file=sys.stderr)
 
     def __repr__(self):
         return self.representation
