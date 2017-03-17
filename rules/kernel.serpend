@@ -3,10 +3,11 @@
 # Comments can end a line
 #
 # alert <PID> <UID> <GID>                   <MSG> '(' [ selector ';' ]+ ')'
-alert       0     *     *  "[$REALTIME] $MESSAGE"  (                     )
+
+alert       0     *     *  "[$__REALTIME_TIMESTAMP] JUST ANYTHING $MESSAGE"  (                     )
 
 # Whitespace doesn't matter :D
 alert * * *
-                "[! $REALTIME] IMPORTANT! : $MESSAGE"
+                "[$__REALTIME_TIMESTAMP] KERNEL PANIC IMPORTANT! : $MESSAGE"
 
         (PRIORITY:6)
