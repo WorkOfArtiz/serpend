@@ -9,7 +9,17 @@ We would prefer to make this fairly fast, although this is not our highest prior
 import mmap
 import struct
 import lzma
-import serpend
+import sys
+
+# Whether the program checks the integrity of data fields
+CHECK_HASHES = True
+
+try:
+    from serpend import lookup3
+except ImportError:
+    print("[!] Couldn't load the lookup3 hashing (maybe not built) disabling hash checks", file=sys.stderr)
+    CHECK_HASHES = False
+
 
 class SyslogParseException(Exception):
     """
@@ -17,14 +27,15 @@ class SyslogParseException(Exception):
     """
     pass
 
+
 class Syslog:
     def __init__(self, path):
-        self.path   = path
+        self.path = path
         self.area = self.handle = None
         self.__enter__()
 
     def close(self):
-        if self.handle != None and self.area != None:
+        if self.handle is not None and self.area is not None:
             self.handle.close()
             self.area.close()
             self.handle = self.area = None
@@ -32,7 +43,7 @@ class Syslog:
     # with-Semantics
     def __enter__(self):
         # if already open
-        if self.area != None:
+        if self.area is not None:
             return
 
         self.handle = open(self.path, 'rb')
@@ -66,15 +77,15 @@ class Syslog:
         """
         size, = struct.unpack_from("<Q", self.area, offset + 8)
         data_size = size - 64
-        data = self.area[offset+64:offset+64+data_size]
+        data = self.area[offset + 64:offset + 64 + data_size]
 
-        if dhash != serpend.lookup3.hash64(data):
-            print("[!] Possibly corrupted field ")
+        if CHECK_HASHES and dhash != lookup3.hash64(data):
+            print("[!] Possibly corrupted field encountered", file=sys.stderr)
 
         flags = self.area[offset + 1]
 
         # According to journal-def these are the options
-        OBJECT_COMPRESSED_XZ  = 1 << 0
+        OBJECT_COMPRESSED_XZ = 1 << 0
         OBJECT_COMPRESSED_LZ4 = 1 << 1
 
         if flags & OBJECT_COMPRESSED_XZ:
@@ -87,7 +98,8 @@ class Syslog:
 
         data = "".join(map(chr, data)).split("=", 1)
         if (len(data) != 2):
-            raise SyslogParseException("DataObject should've contained a key and value, however splitting it went wrong")
+            raise SyslogParseException(
+                "DataObject should've contained a key and value, however splitting it went wrong")
         return data
 
     def _entry_from_offset(self, offset):
@@ -109,12 +121,12 @@ class Syslog:
         """
         entry = {}
 
-        size,seqnum,realtime,monotonic = struct.unpack_from("<4Q", self.area, offset + 8)
-        entry['SEQNUM']    = seqnum
+        size, seqnum, realtime, monotonic = struct.unpack_from("<4Q", self.area, offset + 8)
+        entry['SEQNUM'] = seqnum.ljust(10)
 
         # Times are expressed in usec
-        entry['__REALTIME_TIMESTAMP']  = '%.6f' % (realtime  / 1000000)
-        entry['__MONOTONIC_TIMESTAMP'] = '%.6f' % (monotonic / 1000000)
+        entry['__REALTIME_TIMESTAMP'] =  ('%.6f' % (realtime / 1000000)).ljust(10)
+        entry['__MONOTONIC_TIMESTAMP'] = ('%.6f' % (monotonic / 1000000)).ljust(10)
 
         for entry_item_offset in range(offset + 64, offset + size, 16):
             data_offset, data_hash = struct.unpack_from("<2Q", self.area, entry_item_offset)
@@ -208,6 +220,7 @@ class Syslog:
 
         for entry_offset in self._entry_offsets(initial_entry_array_offset):
             yield self._entry_from_offset(entry_offset)
+
 
 if __name__ == '__main__':
     logfile = '/run/log/journal/466e2282695544fcbdbebd6b989fe556/system.journal'
