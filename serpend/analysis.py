@@ -13,11 +13,17 @@ Format:
 <uid>         ::= <pat>
 <gid>         ::= <pat>
 <selector>    ::= <identifier>:<pat>
-<pat>         ::= 1             - a number will be literally matched
+<pat>         ::= <nr>          - a number will be literally matched
+                  != <nr>       - negative literal number match
+                  >  <nr>       - a number should be larger than another number
+                  <  <nr>       - a number should be smaller than another number
+                  >= <nr>       - a number should be larger than or equal to another number
+                  <= <nr>       - a number should be smaller than or equal to another number
                   "string"      - matches a string literal with double quotes, escaped with \
                   'string'      - matches a string literal with single quotes, escaped with \
                   !             - matches if an entry does not have the attribute
                   *             - always matches, even when the entry doesn't have the attribute
+                  ?             - matches if the entry has the attribute, doesn't look at value
                   /regex/       - matches if the value matches the regex
 
 
@@ -45,7 +51,7 @@ STANDARD_STRING_FORMAT = "[$__REALTIME_TIMESTAMP] $MESSAGE"
 GRAMMAR
 """
 # types of patterns, annotated
-PAT_NR, PAT_STR, PAT_STAR, PAT_NEG, PAT_REG = ['PAT_%s' % s for s in 'NR STR STAR NEG REG'.split()]
+PAT_NR, PAT_NE, PAT_LT, PAT_ST, PAT_LE, PAT_SE, PAT_STR, PAT_STAR, PAT_AVAIL, PAT_NEG, PAT_REG = ['PAT_%s' % s for s in 'NR NR_NE NR_LT NR_ST NR_LE NR_SE STR STAR AVAIL NEG REG'.split()]
 
 # Basic types
 hexadecimal = (pp.Suppress('0x') + pp.Word(pp.hexnums)).setParseAction(lambda x: int(x[0], 16))
@@ -55,11 +61,17 @@ string      = pp.QuotedString('"', escChar='\\', unquoteResults=True) | pp.Quote
 
 # Pattern types
 pat_number  = (hexadecimal | octogonal | decimal).setParseAction(lambda x: (PAT_NR, x[0]))
+pat_ne      = (pp.Suppress('!=') + (hexadecimal | octogonal | decimal)).setParseAction(lambda x: (PAT_NE, x[0]))
+pat_lt      = (pp.Suppress('>') + (hexadecimal | octogonal | decimal)).setParseAction(lambda x: (PAT_LT, x[0]))
+pat_st      = (pp.Suppress('<') + (hexadecimal | octogonal | decimal)).setParseAction(lambda x: (PAT_ST, x[0]))
+pat_le      = (pp.Suppress('>=') + (hexadecimal | octogonal | decimal)).setParseAction(lambda x: (PAT_LE, x[0]))
+pat_se      = (pp.Suppress('<=') + (hexadecimal | octogonal | decimal)).setParseAction(lambda x: (PAT_SE, x[0]))
 pat_string  = string.copy().setParseAction(lambda x: (PAT_STR, x[0]))
 pat_star    = pp.Literal('*').setParseAction(lambda x:(PAT_STAR, '*'))
 pat_neg     = pp.Literal('!').setParseAction(lambda x:(PAT_NEG, '!'))
+pat_avail   = pp.Literal('?').setParseAction(lambda x:(PAT_AVAIL, '?'))
 pat_regex   = pp.QuotedString('/', escChar='\\', unquoteResults=True).setParseAction(lambda x:(PAT_REG, x[0]))
-pat         = (pat_number | pat_string | pat_star | pat_neg | pat_regex).setParseAction(lambda x:x[0])
+pat         = (pat_number | pat_ne | pat_le | pat_se | pat_lt | pat_st | pat_string | pat_star | pat_avail | pat_neg | pat_regex).setParseAction(lambda x:x[0])
 
 pid = pat.copy()
 pid.setParseAction(lambda token: ('_PID', token[0]))
@@ -153,21 +165,44 @@ class SysRule:
         # print("Compiling filter: %s" % str(filter))
         attribute, (pat_type, pat_val) = filter
 
+        def try_int(val, default=None):
+            try:
+                return int(val)
+            except (ValueError, TypeError):
+                return default
+
         if pat_type == PAT_STAR:
             return lambda entry: True
+        if pat_type == PAT_AVAIL:
+            return lambda entry: entry.get(attribute, None) != None
         elif pat_type == PAT_NEG:
             return lambda entry: entry.get(attribute, None) == None
         elif pat_type == PAT_STR:
             return lambda entry: entry.get(attribute, None) == pat_val
         elif pat_type == PAT_NR:
-            def try_int(val, default=None):
-                try:
-                    return int(val)
-                except (ValueError, TypeError):
-                    return default
-
             return lambda entry: try_int(entry.get(attribute, None), None) == pat_val
-
+        elif pat_type == PAT_NE:
+            return lambda entry: try_int(entry.get(attribute, None), None) not in (None, pat_val)
+        elif pat_type == PAT_LT:
+            def _larger_than(entry):
+                val = try_int(entry.get(attribute, None), None)
+                return val != None and val > pat_val
+            return _larger_than
+        elif pat_type == PAT_ST:
+            def _smaller_than(entry):
+                val = try_int(entry.get(attribute, None), None)
+                return val != None and val < pat_val
+            return _smaller_than
+        elif pat_type == PAT_LE:
+            def _larger_than(entry):
+                val = try_int(entry.get(attribute, None), None)
+                return val != None and val >= pat_val
+            return _larger_than
+        elif pat_type == PAT_SE:
+            def _smaller_than(entry):
+                val = try_int(entry.get(attribute, None), None)
+                return val != None and val <= pat_val
+            return _smaller_than
         elif pat_type == PAT_REG:
             compiled = re.compile(pat_val)
 
@@ -220,10 +255,19 @@ class SysRule:
 if __name__ == '__main__':
     rules = """
     # Rule 1, any log PID = 0, no GID, and attributes A being "abc" and attribute B matching regex /[a-z]+/
-    alert 0 * ! "[$__REALTIME_TIMESTAMP] RULE 1: $MESSAGE" (A:"abc"; B:/[a-z]+/)
+    alert 0 * ! "[$__REALTIME_TIMESTAMP] RULE 1                 : $MESSAGE" (A:"abc"; B:/[a-z]+/)
 
     # Rule 2, any log PID = 2, UID = 3, GID = 4
-    alert 2 3 4 "[$__REALTIME_TIMESTAMP] RULE 2: $MESSAGE" ()
+    alert 2 3 4 "[$__REALTIME_TIMESTAMP] RULE 2                 : $MESSAGE" ()
+
+    # Rule 3, any rule with _UID set
+    alert * ? * "[$__REALTIME_TIMESTAMP] RULE 3       We has UID=$_UID: $MESSAGE " ()
+
+    # Rule 4, any entry with _UID not set
+    alert * ! * "[$__REALTIME_TIMESTAMP] RULE 4 We don't has UID: $MESSAGE" ()
+
+    # Rule 5, any entry with PID != 0
+    alert !=0 * * "[$__REALTIME_TIMESTAMP] RULE 5 PID != 0, n.l. $_PID: $MESSAGE" ()
     """.strip()
 
     test_entries = [
