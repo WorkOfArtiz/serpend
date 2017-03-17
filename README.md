@@ -1,6 +1,6 @@
 # serpend
 
-Python 3 module for parsing systemd logs
+A cross-platform Python 3 module for parsing and analysing systemd logs.
 
 ## Usage
 
