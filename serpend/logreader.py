@@ -9,7 +9,7 @@ We would prefer to make this fairly fast, although this is not our highest prior
 import mmap
 import struct
 import lzma
-
+import serpend
 
 class SyslogParseException(Exception):
     """
@@ -21,22 +21,34 @@ class Syslog:
     def __init__(self, path):
         self.path   = path
         self.area = self.handle = None
+        self.__enter__()
+
+    def close(self):
+        if self.handle != None and self.area != None:
+            self.handle.close()
+            self.area.close()
+            self.handle = self.area = None
 
     # with-Semantics
     def __enter__(self):
+        # if already open
+        if self.area != None:
+            return
+
         self.handle = open(self.path, 'rb')
-        self.area   = mmap.mmap(self.handle.fileno(), 0, access=mmap.ACCESS_READ)
+        self.area = mmap.mmap(self.handle.fileno(), 0, access=mmap.ACCESS_READ)
 
         # File should start with LPKSHHRH
         if self.area[:8] != b'LPKSHHRH':
             raise SyslogParseException("File signature did not match")
+
         return self
 
     def __exit__(self, type, value, traceback):
-        self.handle.close()
+        self.close()
         return None
 
-    def _data_from_offset(self, offset):
+    def _data_from_offset(self, offset, dhash=None):
         """
         DataObject
         offset  0. uint8_t type;
@@ -55,6 +67,10 @@ class Syslog:
         size, = struct.unpack_from("<Q", self.area, offset + 8)
         data_size = size - 64
         data = self.area[offset+64:offset+64+data_size]
+
+        if dhash != serpend.lookup3.hash64(data):
+            print("[!] Possibly corrupted field ")
+
         flags = self.area[offset + 1]
 
         # According to journal-def these are the options
@@ -101,13 +117,9 @@ class Syslog:
         entry['__MONOTONIC_TIMESTAMP'] = '%.6f' % (monotonic / 1000000)
 
         for entry_item_offset in range(offset + 64, offset + size, 16):
-            data_offset, object_hash = struct.unpack_from("<2Q", self.area, entry_item_offset)
-            data_key, data_value = self._data_from_offset(data_offset)
-
-            try:
-                entry[data_key] = int(data_value)
-            except ValueError:
-                entry[data_key] = data_value
+            data_offset, data_hash = struct.unpack_from("<2Q", self.area, entry_item_offset)
+            data_key, data_value = self._data_from_offset(data_offset, dhash=data_hash)
+            entry[data_key] = data_value
 
         return entry
 
@@ -197,3 +209,13 @@ class Syslog:
         for entry_offset in self._entry_offsets(initial_entry_array_offset):
             yield self._entry_from_offset(entry_offset)
 
+if __name__ == '__main__':
+    logfile = '/run/log/journal/466e2282695544fcbdbebd6b989fe556/system.journal'
+
+    f = Syslog(logfile)
+
+    for entry in f.entries():
+        print(entry)
+        break
+
+    f.close()
