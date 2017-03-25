@@ -44,22 +44,22 @@ if __name__ == '__main__':
     from argparse import ArgumentParser, RawTextHelpFormatter
 
     parser = ArgumentParser(description="A systemd log rule based analyser", epilog=help_section, formatter_class=RawTextHelpFormatter)
-    parser.add_argument("-r", "--rule",      nargs="*", metavar="rule",     help="A standalone rule, see the help below for examples")
-    parser.add_argument("-f", "--rule-file", nargs="*", metavar="rulefile", help="A rule file, see the help below for examples")
+    parser.add_argument("-r", "--rule",      nargs="*", default=[], metavar="rule",     help="A standalone rule, see the help below for examples")
+    parser.add_argument("-f", "--rule-file", nargs="*", default=[], metavar="rulefile", help="A rule file, see the help below for examples")
     parser.add_argument("logfiles",          nargs="+", metavar="logfile",  help="A standard journald logfile")
     args = parser.parse_args()
 
     sysrules = [SysRule(rule) for rule in args.rule]
 
-    for rulefile in args.rule_file:
-        sysrules.extend(SysRule.rules_from_file(rulefile))
-
     if not sysrules:
         print("[!] No rules selected, closing")
         exit()
+
+    for rulefile in args.rule_file:
+        sysrules.extend(SysRule.rules_from_file(rulefile))
 
     for logfile in args.logfiles:
         with Syslog(logfile) as syslog:
             for entry in syslog.entries():
                 for sysrule in sysrules:
-                    sysrule.run_entry(entry)
+                   sysrule.run_entry(entry)
