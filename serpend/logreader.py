@@ -15,7 +15,7 @@ import sys
 CHECK_HASHES = True
 
 try:
-    from serpend import lookup3
+    from serpend.lookup3 import hash64
 except ImportError:
     print("[!] Couldn't load the lookup3 hashing (maybe not built) disabling hash checks", file=sys.stderr)
     CHECK_HASHES = False
@@ -44,7 +44,7 @@ class Syslog:
     def __enter__(self):
         # if already open
         if self.area is not None:
-            return
+            return self
 
         self.handle = open(self.path, 'rb')
         self.area = mmap.mmap(self.handle.fileno(), 0, access=mmap.ACCESS_READ)
@@ -52,12 +52,11 @@ class Syslog:
         # File should start with LPKSHHRH
         if self.area[:8] != b'LPKSHHRH':
             raise SyslogParseException("File signature did not match")
-
         return self
 
     def __exit__(self, type, value, traceback):
         self.close()
-        return None
+        return self
 
     def _data_from_offset(self, offset, dhash=None):
         """
@@ -79,8 +78,9 @@ class Syslog:
         data_size = size - 64
         data = self.area[offset + 64:offset + 64 + data_size]
 
-        if CHECK_HASHES and dhash != lookup3.hash64(data):
-            print("[!] Possibly corrupted field encountered", file=sys.stderr)
+        if CHECK_HASHES:
+            if dhash != hash64(data):
+                print("[!] Possibly corrupted field encountered", file=sys.stderr)
 
         flags = self.area[offset + 1]
 
@@ -122,7 +122,7 @@ class Syslog:
         entry = {}
 
         size, seqnum, realtime, monotonic = struct.unpack_from("<4Q", self.area, offset + 8)
-        entry['SEQNUM'] = seqnum.ljust(10)
+        entry['SEQNUM'] = "%d" % seqnum
 
         # Times are expressed in usec
         entry['__REALTIME_TIMESTAMP'] =  ('%.6f' % (realtime / 1000000)).ljust(10)
@@ -156,7 +156,6 @@ class Syslog:
         while entry_array_offset != 0:
             # get the size attribute (little endian, 64bit) at 8 internal offset
             size, = struct.unpack_from("<Q", self.area, entry_array_offset + 8)
-            # print("Entries in this entry array: %d" % ((size - 24) // 8))
 
             # There are size (- header size (24 bytes)) / 8 entries
             for i in range((size - 24) // 8):
@@ -190,37 +189,39 @@ class Syslog:
 
         File header
 
-        offset   0  uint8_t signature[8]; /* "LPKSHHRH" */
-        offset   8  le32_t compatible_flags;
-        offset  12  le32_t incompatible_flags;
-        offset  16  uint8_t state;
-        offset  17  uint8_t reserved[7];
+        offset   0     uint8_t signature[8]; /* "LPKSHHRH" */
+        offset   8      le32_t compatible_flags;
+        offset  12      le32_t incompatible_flags;
+        offset  16     uint8_t state;
+        offset  17     uint8_t reserved[7];
         offset  24  sd_id128_t file_id;
         offset  40  sd_id128_t machine_id;
         offset  56  sd_id128_t boot_id;    /* last writer */
         offset  72  sd_id128_t seqnum_id;
-        offset  88  le64_t header_size;
-        offset  96  le64_t arena_size;
-        offset 104  le64_t data_hash_table_offset;
-        offset 112  le64_t data_hash_table_size;
-        offset 120  le64_t field_hash_table_offset;
-        offset 128  le64_t field_hash_table_size;
-        offset 136  le64_t tail_object_offset;
-        offset 144  le64_t n_objects;
-        offset 152  le64_t n_entries;
-        offset 160  le64_t tail_entry_seqnum;
-        offset 168  le64_t head_entry_seqnum;
-        offset 176  le64_t entry_array_offset;
-        offset 184  le64_t head_entry_realtime;
-        offset 192  le64_t tail_entry_realtime;
-        offset 200  le64_t tail_entry_monotonic;
+        offset  88      le64_t header_size;
+        offset  96      le64_t arena_size;
+        offset 104      le64_t data_hash_table_offset;
+        offset 112      le64_t data_hash_table_size;
+        offset 120      le64_t field_hash_table_offset;
+        offset 128      le64_t field_hash_table_size;
+        offset 136      le64_t tail_object_offset;
+        offset 144      le64_t n_objects;
+        offset 152      le64_t n_entries;
+        offset 160      le64_t tail_entry_seqnum;
+        offset 168      le64_t head_entry_seqnum;
+        offset 176      le64_t entry_array_offset;
+        offset 184      le64_t head_entry_realtime;
+        offset 192      le64_t tail_entry_realtime;
+        offset 200      le64_t tail_entry_monotonic;
         """
+
         entry_array_offset_offset = 176  # see table above
         initial_entry_array_offset, = struct.unpack_from("<Q", self.area, entry_array_offset_offset)
 
         for entry_offset in self._entry_offsets(initial_entry_array_offset):
             yield self._entry_from_offset(entry_offset)
-
+        return
+        yield
 
 if __name__ == '__main__':
     logfile = '/run/log/journal/466e2282695544fcbdbebd6b989fe556/system.journal'
