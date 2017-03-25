@@ -72,7 +72,8 @@ pat_string = string.copy().setParseAction(lambda x: (PAT_STR, x[0]))
 pat_star = pp.Literal('*').setParseAction(lambda x: (PAT_STAR, '*'))
 pat_neg = pp.Literal('!').setParseAction(lambda x: (PAT_NEG, '!'))
 pat_avail = pp.Literal('?').setParseAction(lambda x: (PAT_AVAIL, '?'))
-pat_regex = pp.QuotedString('/', escChar='\\', unquoteResults=True).setParseAction(lambda x: (PAT_REG, x[0]))
+pat_regex = pp.Combine(pp.QuotedString('/', escChar='\\', unquoteResults=True) + pp.Optional(pp.Word(pp.alphas),default=''), joinString=':').setParseAction(lambda x: (PAT_REG, x[0].rsplit(':')))
+
 pat = (
 pat_number | pat_ne | pat_le | pat_se | pat_lt | pat_st | pat_string | pat_star | pat_avail | pat_neg | pat_regex).setParseAction(
     lambda x: x[0])
@@ -114,7 +115,7 @@ class SysRule:
     def __init__(self, rule):
         # if it's a string, we'll have to parse it ourselves, otherwise assume it's already parsed
         if isinstance(rule, str):
-            rule = alert.parseString(rule, parseAll=True)
+            rule = alert.parseString(rule, parseAll=True)[0]
 
         # Our parsing function parses the rule into
         # pat, pat, pat, print_string, pat, pat, ...
@@ -174,7 +175,7 @@ class SysRule:
             PAT_STR   <string>     matches if the field has the exact value of the quoted string. Note both ' and " accepted
                                         examples: "/usr/bin/env", 'If you\'re so "mentally challenged", please visit a doctor'
             PAT_REG   <regex>      matches if the field matches the regex. perl-like syntax
-                                        example: /^[a-z]+$/
+                                        example: /^[a-z]+$/ism
         """
         # print("Compiling filter: %s" % str(filter))
         attribute, (pat_type, pat_val) = filter
@@ -222,11 +223,18 @@ class SysRule:
 
             return _smaller_than
         elif pat_type == PAT_REG:
-            compiled = re.compile(pat_val)
+            regex, rflags = pat_val
+            flags = 0
+            flag_trans = { 'I':re.I, 'M':re.M, 'S':re.S }
+
+            for rflag in rflags.upper():
+                flags |= flag_trans.get(rflag, 0)
+
+            compiled = re.compile(regex, flags=flags)
 
             def _reg_match(entry):
                 field = entry.get(attribute, None)
-                return field != None and compiled.match(field) != None
+                return field != None and compiled.search(field) != None
 
             return _reg_match
 
@@ -265,9 +273,9 @@ class SysRule:
         if all(f(entry) for f in self.filters):
             try:
                 print(self.print_fmt.format(**entry))
-            except KeyError as ke:
-                print("Needed to print %s, but variable %s was not present" % (self.usr_fmt, str(ke)), file=sys.stderr)
-
+            except BaseException as ke:
+                print('Needed to print "%s", but variable %s was not present' % (self.user_fmt, str(ke)), file=sys.stderr)
+                print("DUMP {%s}" % ", ".join("%s : %s" % (k, v) for k,v in entry.items()))
         return self
 
     def matches(self, entry):
